@@ -3,7 +3,7 @@ Ollama local provider implementation for offline AI.
 """
 
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, AsyncIterator
 import aiohttp
 
 from .base import BaseProvider
@@ -163,7 +163,83 @@ class OllamaProvider(BaseProvider):
         except Exception as e:
             logger.error(f"Error generating with Ollama: {e}")
             raise
-    
+
+    async def generate_stream(
+        self,
+        query: str,
+        task_type: Optional[TaskType] = None,
+        **kwargs
+    ) -> AsyncIterator[str]:
+        """Stream response from Ollama as chunks.
+
+        Attempts to use Ollama's streaming endpoint and yields text chunks.
+        Supports simple SSE-style `data:` framing or plain newline-delimited chunks.
+        """
+        # Check availability first
+        if not await self._check_availability():
+            raise ProviderUnavailableError("Ollama", "Server not running")
+
+        logger.info(f"Streaming using Ollama model: {self.model}")
+
+        url = f"{self.base_url}/api/generate"
+        payload = {
+            "model": kwargs.get("model", self.model),
+            "prompt": query,
+            "stream": True,
+            "options": {
+                "temperature": kwargs.get("temperature", 0.7),
+                "top_p": kwargs.get("top_p", 0.9)
+            }
+        }
+
+        if "max_tokens" in kwargs:
+            payload["options"]["num_predict"] = kwargs["max_tokens"]
+
+        try:
+            session = await self._get_session()
+            async with session.post(url, json=payload) as response:
+                if response.status != 200:
+                    try:
+                        text = await response.text()
+                    except Exception:
+                        text = None
+                    raise APIError("Ollama", status_code=response.status, response_text=text)
+
+                buffer = ""
+                # Read streamed bytes in chunks
+                async for raw in response.content.iter_chunked(1024):
+                    try:
+                        piece = raw.decode("utf-8", errors="replace")
+                    except Exception:
+                        piece = str(raw)
+
+                    buffer += piece
+
+                    # Process complete lines
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        # SSE-like framing
+                        if line.startswith("data:"):
+                            data = line.split("data:", 1)[1].strip()
+                            if data == "[DONE]":
+                                return
+                            yield data
+                        else:
+                            # Plain line
+                            yield line
+
+                # If anything remains in buffer, yield it
+                if buffer.strip():
+                    yield buffer.strip()
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Ollama streaming API error: {e}")
+            raise APIError("Ollama", message=str(e))
+
     async def close(self):
         """Close the provider session."""
         if self._session and not self._session.closed:

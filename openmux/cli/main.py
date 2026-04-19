@@ -129,9 +129,12 @@ if RICH_AVAILABLE:
                                         async for chunk in orchestrator.process_stream(user_input, task_type=task):
                                             console.print(chunk)
                                             full.append(chunk)
-                                        # Save assembled response to history
+                                        # Save assembled response to history. If the
+                                        # orchestrator recorded the streaming provider
+                                        # use it for attribution.
+                                        provider_name = getattr(orchestrator, "_last_stream_provider", "")
                                         try:
-                                            _append_history_entry(user_input, "\n".join(full))
+                                            _append_history_entry(user_input, "\n".join(full), provider=provider_name)
                                         except Exception:
                                             pass
                                     except Exception as e:
@@ -162,7 +165,7 @@ if RICH_AVAILABLE:
                     task = None
                     if task_type:
                         task = TaskType.from_string(task_type)
-                    
+
                     console.print("[dim]Processing...[/dim]")
                     if stream:
                         import asyncio
@@ -172,8 +175,11 @@ if RICH_AVAILABLE:
                             async for chunk in orchestrator.process_stream(query, task_type=task):
                                 console.print(chunk)
                                 full.append(chunk)
+
+                            # Save assembled response to history and attribute provider if available
+                            provider_name = getattr(orchestrator, "_last_stream_provider", "")
                             try:
-                                _append_history_entry(query, "\n".join(full))
+                                _append_history_entry(query, "\n".join(full), provider=provider_name)
                             except Exception:
                                 pass
 

@@ -134,13 +134,19 @@ class Orchestrator:
         import asyncio as _asyncio
 
         async def _gen():
-            # Initialize selector/fallback like normal
-            await self._process_async("", None)  # ensure selector/fallback inited
-            # For streaming we delegate to the first selected provider's
-            # generate_stream implementation. Keep behavior simple: pick the
-            # single best provider via selector.select_single
+            # Initialize selector and fallback handlers only (do not run full
+            # processing pipeline here - that may trigger provider calls).
+            self._initialize_selector()
+            self._initialize_fallback()
+
+            # Determine task type, lazily initializing classifier like _process_async
             if task_type is None:
                 try:
+                    if self.classifier is None:
+                        from ..classifier.classifier import TaskClassifier
+
+                        self.classifier = TaskClassifier()
+
                     inferred_type, _ = self.classifier.classify(query)
                     _task_type = inferred_type
                 except Exception:
@@ -148,10 +154,17 @@ class Orchestrator:
             else:
                 _task_type = task_type
 
-            self._initialize_selector()
+            # Select single provider for streaming
             provider = self.selector.select_single(_task_type)
             if provider is None:
                 raise NoProvidersAvailableError(task_type=str(_task_type), available_providers=[p.name for p in self.registry.get_all_available()])
+
+            # Record which provider will be used for this stream so callers
+            # (e.g., CLI) can attribute responses in history.
+            try:
+                self._last_stream_provider = provider.name
+            except Exception:
+                self._last_stream_provider = ""
 
             # Stream from provider
             async for chunk in provider.generate_stream(query, task_type=_task_type, **kwargs):

@@ -133,6 +133,44 @@ class TestOllamaProviderGenerate:
             mock_session.post.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_generate_stream_yields_chunks(self, ollama_provider):
+        # Simulate streaming response by creating an async iterator over chunks
+        class MockStream:
+            def __init__(self, chunks):
+                self._chunks = chunks
+
+            async def __aiter__(self):
+                for c in self._chunks:
+                    yield c
+
+        # Create a mock response with content.iter_chunked that yields utf-8 chunks
+        mock_response = MagicMock()
+        mock_response.status = 200
+        # Create raw bytes that include newline-delimited pieces
+        chunks = [b'data: Hello\n', b'data: world\n', b'data: [DONE]\n']
+
+        async def iter_chunked(n):
+            for c in chunks:
+                yield c
+
+        mock_response.content = MagicMock()
+        mock_response.content.iter_chunked = iter_chunked
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_cm)
+
+        with patch.object(ollama_provider, '_get_session', return_value=mock_session):
+            collected = []
+            async for part in ollama_provider.generate_stream("Say hi"):
+                collected.append(part)
+
+            assert collected == ["Hello", "world"]
+
+    @pytest.mark.asyncio
     async def test_generate_with_custom_parameters(self, ollama_provider):
         mock_response = AsyncMock()
         mock_response.status = 200
