@@ -11,8 +11,15 @@ def test_orchestrator_uses_cache(monkeypatch):
     # enable in-memory cache on orchestrator
     orch.response_cache = ResponseCache(ttl=60, backend="memory")
 
-    # Pre-populate cache with expected key
-    key = orch.response_cache.make_key({"q": "hello", "task": "None"})
+    # Pre-populate cache with expected key (now includes extra params defaulting to None)
+    key = orch.response_cache.make_key({
+        "q": "hello",
+        "task": "None",
+        "temperature": None,
+        "provider_preference": None,
+        "system_prompt": None,
+        "session_id": None,
+    })
     asyncio.get_event_loop().run_until_complete(orch.response_cache.set(key, "cached-response"))
 
     # Patch router so that if called it would raise - proving it shouldn't be called

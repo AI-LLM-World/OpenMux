@@ -192,12 +192,35 @@ class Orchestrator:
         self._initialize_selector()
         self._initialize_fallback()
 
-        # Attempt cache lookup if enabled. We use a simple key composed of
-        # the query and task_type so different task types don't collide.
+        # Attempt cache lookup if enabled. Build a deterministic key from
+        # request parameters that affect response. If a parameter is not
+        # provided, we include None so the key is stable.
         cache_key = None
         if self.response_cache is not None:
             try:
-                key_payload = {"q": query, "task": str(task_type)}
+                temperature = kwargs.get("temperature")
+                prefs = kwargs.get("provider_preference")
+                if prefs is not None:
+                    try:
+                        # normalize preference list to sorted list of strings
+                        prefs_list = sorted([str(p) for p in prefs])
+                    except Exception:
+                        prefs_list = list(prefs)
+                else:
+                    prefs_list = None
+
+                system_prompt = kwargs.get("system_prompt")
+                session_id = kwargs.get("session_id")
+
+                key_payload = {
+                    "q": query,
+                    "task": str(task_type),
+                    "temperature": temperature,
+                    "provider_preference": prefs_list,
+                    "system_prompt": system_prompt,
+                    "session_id": session_id,
+                }
+
                 cache_key = self.response_cache.make_key(key_payload)
                 cached = await self.response_cache.get(cache_key)
                 if cached is not None:
