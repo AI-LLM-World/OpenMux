@@ -36,6 +36,8 @@
   },
   "cache": {
     "enabled": false,
-    "ttl": 3600
+    "ttl": 3600,
+    "backend": "memory",
+    "path": null
   }
 }

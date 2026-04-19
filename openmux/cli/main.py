@@ -20,6 +20,40 @@ except ImportError:
 
 from ..core.orchestrator import Orchestrator
 from ..classifier.task_types import TaskType
+import json
+import datetime
+
+# History storage
+_HISTORY_DIR = Path.home() / ".openmux"
+_HISTORY_FILE = _HISTORY_DIR / "history.jsonl"
+
+
+def _ensure_history_dir():
+    try:
+        _HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # Best-effort: if we cannot create directory, silently skip history
+        return False
+    return True
+
+
+def _append_history_entry(user_input: str, response: str, provider: str = ""):
+    if not _ensure_history_dir():
+        return
+
+    entry = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "query": user_input,
+        "response": response,
+        "provider": provider
+    }
+
+    try:
+        with open(_HISTORY_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        # Don't let history failures affect CLI
+        pass
 
 
 if RICH_AVAILABLE:
@@ -51,6 +85,7 @@ if RICH_AVAILABLE:
         query: Optional[str] = typer.Argument(None, help="Query to process"),
         task_type: Optional[str] = typer.Option(None, "--task", "-t", help="Task type (chat, code, embeddings)"),
         interactive: bool = typer.Option(False, "--interactive", "-i", help="Start interactive chat mode"),
+        stream: bool = typer.Option(False, "--stream", "-s", help="Stream output as it arrives"),
     ):
         """Chat with AI models using OpenMux."""
         try:
@@ -83,14 +118,39 @@ if RICH_AVAILABLE:
                             
                             # Process query
                             console.print("[dim]Processing...[/dim]")
-                            response = orchestrator.process(query=user_input, task_type=task)
-                            
-                            # Display response
-                            console.print(Panel(
-                                response,
-                                title="[bold blue]AI Response[/bold blue]",
-                                style="blue"
-                            ))
+                            # Support streaming if provider/Orchestrator supports it
+                            if stream:
+                                # orchestrator.process_stream returns an async iterator
+                                import asyncio
+
+                                async def _stream_and_print():
+                                    try:
+                                        full = []
+                                        async for chunk in orchestrator.process_stream(user_input, task_type=task):
+                                            console.print(chunk)
+                                            full.append(chunk)
+                                        # Save assembled response to history
+                                        try:
+                                            _append_history_entry(user_input, "\n".join(full))
+                                        except Exception:
+                                            pass
+                                    except Exception as e:
+                                        console.print(f"[red]Stream error: {e}[/red]")
+
+                                asyncio.run(_stream_and_print())
+                            else:
+                                response = orchestrator.process(query=user_input, task_type=task)
+                                # Display response
+                                console.print(Panel(
+                                    response,
+                                    title="[bold blue]AI Response[/bold blue]",
+                                    style="blue"
+                                ))
+                                # Append to history
+                                try:
+                                    _append_history_entry(user_input, response)
+                                except Exception:
+                                    pass
                             
                         except KeyboardInterrupt:
                             console.print("\n[yellow]Goodbye![/yellow]")
@@ -104,13 +164,31 @@ if RICH_AVAILABLE:
                         task = TaskType.from_string(task_type)
                     
                     console.print("[dim]Processing...[/dim]")
-                    response = orchestrator.process(query=query, task_type=task)
-                    
-                    console.print(Panel(
-                        response,
-                        title="[bold blue]Response[/bold blue]",
-                        style="blue"
-                    ))
+                    if stream:
+                        import asyncio
+
+                        async def _stream_and_print():
+                            full = []
+                            async for chunk in orchestrator.process_stream(query, task_type=task):
+                                console.print(chunk)
+                                full.append(chunk)
+                            try:
+                                _append_history_entry(query, "\n".join(full))
+                            except Exception:
+                                pass
+
+                        asyncio.run(_stream_and_print())
+                    else:
+                        response = orchestrator.process(query=query, task_type=task)
+                        console.print(Panel(
+                            response,
+                            title="[bold blue]Response[/bold blue]",
+                            style="blue"
+                        ))
+                        try:
+                            _append_history_entry(query, response)
+                        except Exception:
+                            pass
                 
         except Exception as e:
             console.print(Panel(f"[bold red]Error:[/bold red] {str(e)}", style="red"))
@@ -264,6 +342,63 @@ def main():
         sys.exit(1)
     
     app()
+
+
+if RICH_AVAILABLE:
+    @app.command()
+    def history(
+        show: bool = typer.Option(True, "--show/--no-show", help="Show recent history entries"),
+        export: Optional[Path] = typer.Option(None, "--export", "-e", help="Export history to a file (JSONL)"),
+        limit: int = typer.Option(20, "--limit", "-n", help="Number of entries to show")
+    ):
+        """Show or export local session history."""
+        try:
+            if export:
+                # Copy history file to export path
+                if not _HISTORY_FILE.exists():
+                    console.print("[yellow]No history to export.[/yellow]")
+                    raise typer.Exit()
+                with open(_HISTORY_FILE, 'r', encoding='utf-8') as src, open(export, 'w', encoding='utf-8') as dst:
+                    for line in src:
+                        dst.write(line)
+                console.print(f"[green]Exported history to {export}[/green]")
+                raise typer.Exit()
+
+            if show:
+                if not _HISTORY_FILE.exists():
+                    console.print("[yellow]No history available.[/yellow]")
+                    raise typer.Exit()
+
+                entries = []
+                with open(_HISTORY_FILE, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        try:
+                            entries.append(json.loads(line))
+                        except Exception:
+                            continue
+
+                # Show most recent by timestamp
+                entries = sorted(entries, key=lambda e: e.get('timestamp', ''), reverse=True)[:limit]
+
+                table = Table(title="OpenMux History")
+                table.add_column("When")
+                table.add_column("Query")
+                table.add_column("Provider")
+                table.add_column("Response (truncated)")
+
+                for e in entries:
+                    when = e.get('timestamp', '')
+                    q = (e.get('query') or '')[:60]
+                    p = e.get('provider') or ''
+                    r = (e.get('response') or '')[:120].replace('\n', ' ')
+                    table.add_row(when, q, p, r)
+
+                console.print(table)
+                raise typer.Exit()
+
+        except Exception as e:
+            console.print(Panel(f"[bold red]Error:[/bold red] {str(e)}", style="red"))
+            raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

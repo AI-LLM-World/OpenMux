@@ -281,9 +281,14 @@ class TestHuggingFaceProviderGenerate:
         mock_session = AsyncMock()
         mock_session.post = MagicMock(return_value=mock_cm)
 
+        from openmux.utils.exceptions import APIError
+
         with patch.object(hf_provider, '_get_session', return_value=mock_session):
-            with pytest.raises(aiohttp.ClientError):
+            with pytest.raises(APIError) as excinfo:
                 await hf_provider.generate("test query", TaskType.CHAT)
+
+            # Ensure status code is propagated
+            assert excinfo.value.status_code == 429
 
     @pytest.mark.asyncio
     async def test_generate_uses_custom_model_id(self):

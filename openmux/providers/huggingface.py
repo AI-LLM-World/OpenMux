@@ -9,6 +9,7 @@ import aiohttp
 from .base import BaseProvider
 from ..classifier.task_types import TaskType
 from ..utils.logging import setup_logger
+from ..utils.exceptions import APIError
 
 
 logger = setup_logger(__name__)
@@ -127,9 +128,43 @@ class HuggingFaceProvider(BaseProvider):
         try:
             session = await self._get_session()
             async with session.post(url, json=payload) as response:
-                response.raise_for_status()
+                # Handle non-200 responses explicitly so we can provide
+                # better guidance (including Retry-After when present).
+                if response.status != 200:
+                    # Try to include helpful information from the response
+                    try:
+                        text = await response.text()
+                    except Exception:
+                        text = None
+
+                    # Parse Retry-After header into an integer number of seconds
+                    parsed_retry_after = None
+                    retry_after_hdr = None
+                    try:
+                        retry_after_hdr = response.headers.get("Retry-After") if response.headers else None
+                    except Exception:
+                        retry_after_hdr = None
+
+                    if retry_after_hdr:
+                        # Try integer seconds first
+                        try:
+                            parsed_retry_after = int(retry_after_hdr)
+                        except Exception:
+                            # Try to parse HTTP-date format
+                            try:
+                                from email.utils import parsedate_to_datetime
+                                import datetime as _dt
+
+                                dt = parsedate_to_datetime(retry_after_hdr)
+                                now = _dt.datetime.now(dt.tzinfo) if dt.tzinfo else _dt.datetime.utcnow()
+                                parsed_retry_after = max(0, int((dt - now).total_seconds()))
+                            except Exception:
+                                parsed_retry_after = None
+
+                    raise APIError("HuggingFace", status_code=response.status, response_text=text, parsed_retry_after=parsed_retry_after)
+
                 result = await response.json()
-                
+
                 # Parse response based on task type
                 if task_type == TaskType.EMBEDDINGS:
                     # Return embeddings as string representation
@@ -138,11 +173,15 @@ class HuggingFaceProvider(BaseProvider):
                     if isinstance(result[0], dict) and "generated_text" in result[0]:
                         return result[0]["generated_text"]
                     return str(result[0])
-                
+
                 return str(result)
-                
+
+        except APIError:
+            # APIError already contains structured information - re-raise
+            logger.error("HuggingFace API returned an error response")
+            raise
         except aiohttp.ClientError as e:
-            logger.error(f"HuggingFace API error: {e}")
+            logger.error(f"HuggingFace client error: {e}")
             raise
         except Exception as e:
             logger.error(f"Error generating with HuggingFace: {e}")

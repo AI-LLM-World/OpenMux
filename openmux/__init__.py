@@ -28,12 +28,33 @@ except ImportError:
     # dotenv not installed, skip
     pass
 
-from .core.orchestrator import Orchestrator
-from .classifier.task_types import TaskType
-
 __version__ = "0.1.0"
 __author__ = "OpenMux Contributors"
-__all__ = ["Orchestrator", "TaskType"]
+__all__ = ["Orchestrator", "TaskType", "get_version"]
+
+
+def __getattr__(name: str):
+    """Lazy attribute loader for top-level exports.
+
+    This avoids importing heavy dependencies (providers/aiohttp) at
+    package import time while preserving the public API. Accessing
+    Orchestrator or TaskType will import them on demand.
+    """
+    if name == "Orchestrator":
+        from .core.orchestrator import Orchestrator as _Orch
+
+        return _Orch
+    if name == "TaskType":
+        from .classifier.task_types import TaskType as _TT
+
+        return _TT
+    if name == "get_version":
+        return get_version
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    return sorted(list(globals().keys()) + __all__)
 
 
 def get_version():

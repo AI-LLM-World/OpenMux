@@ -1,7 +1,7 @@
 """Base provider interface for OpenCascade."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, AsyncIterator
 import time
 import asyncio
 
@@ -67,6 +67,18 @@ class BaseProvider(ABC):
     async def generate(self, prompt: str, **kwargs) -> str:
         """Generate a response for the given prompt."""
         pass
+
+    async def generate_stream(self, prompt: str, **kwargs) -> AsyncIterator[str]:
+        """Async generator that yields chunks of a generated response.
+
+        Default implementation calls the non-streaming `generate` and yields
+        the full response as a single chunk. Providers that support streaming
+        natively should override this method.
+        """
+        # Default behaviour: call the regular generate and yield once
+        result = await self.generate(prompt, **kwargs)
+        # Turn the single result into an async generator
+        yield result
     
     async def health_check(self, timeout: float = 5.0) -> bool:
         """Perform a health check on the provider.
