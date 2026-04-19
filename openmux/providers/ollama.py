@@ -150,6 +150,55 @@ class OllamaProvider(BaseProvider):
         """Close the provider session."""
         if self._session and not self._session.closed:
             await self._session.close()
+
+    async def list_models(self) -> list:
+        """List available models from a local Ollama server.
+
+        Tries common endpoints (/api/models, /api/tags) and returns the
+        parsed JSON result (list or dict payload normalized to a list).
+        Raises ProviderUnavailableError if the server is unreachable and
+        APIError for HTTP-level failures.
+        """
+        if not await self._check_availability():
+            raise ProviderUnavailableError("Ollama", "Server not running")
+
+        session = await self._get_session()
+        endpoints = ["/api/models", "/api/tags"]
+        last_text = None
+
+        for ep in endpoints:
+            try:
+                async with session.get(f"{self.base_url}{ep}") as response:
+                    if response.status != 200:
+                        try:
+                            last_text = await response.text()
+                        except Exception:
+                            last_text = None
+                        # try the next endpoint
+                        continue
+
+                    result = await response.json()
+
+                    # Normalize common response shapes: dict{models: [...]}, dict{tags: [...]}, or list
+                    if isinstance(result, dict):
+                        if "models" in result and isinstance(result["models"], list):
+                            return result["models"]
+                        if "tags" in result and isinstance(result["tags"], list):
+                            return result["tags"]
+                        # Fallback: wrap dict in a list
+                        return [result]
+
+                    return result
+
+            except aiohttp.ClientError:
+                # propagate client errors (network/connection issues)
+                raise
+            except Exception:
+                # keep trying other endpoints
+                continue
+
+        # If we reached here, no endpoint returned 200
+        raise APIError("Ollama", message="Failed to list models", response_text=last_text)
     
     async def __aenter__(self):
         """Async context manager entry."""
