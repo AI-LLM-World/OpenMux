@@ -9,6 +9,7 @@ import aiohttp
 from .base import BaseProvider
 from ..classifier.task_types import TaskType
 from ..utils.logging import setup_logger
+from ..utils.exceptions import APIError, ProviderUnavailableError
 
 
 logger = setup_logger(__name__)
@@ -109,10 +110,10 @@ class OllamaProvider(BaseProvider):
         """
         # Check availability
         if not await self._check_availability():
-            raise Exception("Ollama provider not available: server not running")
-        
+            raise ProviderUnavailableError("Ollama", "Server not running")
+
         logger.info(f"Using Ollama model: {self.model}")
-        
+
         # Build request
         url = f"{self.base_url}/api/generate"
         payload = {
@@ -124,23 +125,40 @@ class OllamaProvider(BaseProvider):
                 "top_p": kwargs.get("top_p", 0.9)
             }
         }
-        
+
         if "max_tokens" in kwargs:
             payload["options"]["num_predict"] = kwargs["max_tokens"]
-        
+
         try:
             session = await self._get_session()
             async with session.post(url, json=payload) as response:
-                response.raise_for_status()
+                # Explicitly handle non-200 responses so we can return structured errors
+                if response.status != 200:
+                    try:
+                        text = await response.text()
+                    except Exception:
+                        text = None
+
+                    retry_after = response.headers.get("Retry-After") if response.headers else None
+                    if retry_after:
+                        extra = f" Retry-After: {retry_after}"
+                        text = (text or "") + extra
+
+                    raise APIError("Ollama", status_code=response.status, response_text=text)
+
                 result = await response.json()
-                
+
                 if "response" in result:
                     return result["response"]
-                
+
                 return str(result)
-                
+
+        except APIError:
+            logger.error("Ollama API returned an error response")
+            raise
         except aiohttp.ClientError as e:
-            logger.error(f"Ollama API error: {e}")
+            logger.error(f"Ollama client error: {e}")
+            # Re-raise so callers/tests that expect aiohttp.ClientError still work
             raise
         except Exception as e:
             logger.error(f"Error generating with Ollama: {e}")
