@@ -69,9 +69,13 @@ class APIError(ProviderError):
     """Raised when an API call fails."""
     
     def __init__(self, provider_name: str, status_code: Optional[int] = None, 
-                 message: Optional[str] = None, response_text: Optional[str] = None):
+                 message: Optional[str] = None, response_text: Optional[str] = None,
+                 parsed_retry_after: Optional[int] = None):
         self.status_code = status_code
         self.response_text = response_text
+        # parsed_retry_after is an integer number of seconds suggested by the provider
+        # (derived from a numeric Retry-After header or parsed HTTP-date). Optional.
+        self.parsed_retry_after = parsed_retry_after
         
         if status_code:
             error_message = f"API error {status_code}"
@@ -85,6 +89,12 @@ class APIError(ProviderError):
             details = "Invalid API key. Please check your credentials."
         elif status_code == 429:
             details = "Rate limit exceeded. Please wait before retrying."
+            # Prefer explicit parsed_retry_after when available; append to details
+            if parsed_retry_after:
+                details = details + f" Retry-After: {parsed_retry_after}s"
+            if response_text:
+                # Append any provider response text for extra context
+                details = details + f" {response_text[:200]}"
         elif status_code and status_code >= 500:
             details = "Server error. The provider may be experiencing issues."
         elif response_text:

@@ -77,4 +77,27 @@
       }
     ]
   }
+  ,
+  "mistral": {
+    "models": [
+      {
+        "id": "mistralai/mistral-7b-instruct",
+        "name": "Mistral 7B Instruct",
+        "task_types": ["chat", "code"],
+        "context_length": 8192,
+        "free": true
+      }
+    ]
+  },
+  "together": {
+    "models": [
+      {
+        "id": "togethercomputer/RedPajama-INCITE-3B-v1",
+        "name": "RedPajama INCITE 3B",
+        "task_types": ["chat", "code"],
+        "context_length": 4096,
+        "free": true
+      }
+    ]
+  }
 }

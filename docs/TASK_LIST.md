@@ -150,22 +150,23 @@ Together AI can be added later if needed based on user demand.
 
 ---
 
-### Task 2.3: Provider Registry System 🔮
-**Goal:** Dynamic provider loading
+### Task 2.3: Provider Registry System 🔄 In Review
+**Goal:** Dynamic provider loading (plugin discovery via Python entry points)
 
 | Sub-task | Status | Priority | Effort | Resources Needed |
 |----------|--------|----------|--------|------------------|
-| Provider plugin system | 🔮 | HIGH | 3 days | Python entry points |
-| Registry JSON schema | 🔮 | MEDIUM | 1 day | JSON schema docs |
-| Auto-discovery | 🔮 | MEDIUM | 2 days | Package inspection |
-| Provider validation | 🔮 | HIGH | 2 days | Schema validator |
+| Provider plugin system | ✅ Implemented (entry-point discovery) | HIGH | 1 day | Python entry points, tests |
+| Registry JSON schema | 🔄 In Progress | MEDIUM | 1 day | JSON schema docs |
+| Auto-discovery | ✅ Implemented | MEDIUM | 1 day | Package inspection |
+| Provider validation | 🔄 In Progress | HIGH | 2 days | Schema validator |
 | Hot-reload support | 🔮 | LOW | 2 days | File watching |
 
-**Total Effort:** 1.5 weeks  
+**Total Effort:** 1.5 weeks (remaining items: validation + docs)  
 **Resources Needed:**
-- Plugin architecture research
-- JSON schema library  
-**Deliverable:** Pluggable provider system
+- Plugin architecture research (complete)
+- JSON schema library (for validation)
+- Test infra for plugin packaging
+**Deliverable:** Pluggable provider system (entry-point discovery implemented). See docs/PROVIDER_PLUGINS.md for details. Tests added: tests/unit/test_registry.py
 
 ---
 

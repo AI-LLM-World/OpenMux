@@ -41,7 +41,8 @@ jobs:
         uv venv
         source .venv/bin/activate
         uv pip install -e ".[dev]"
-        uv pip install pytest pytest-asyncio pytest-cov
+        # Ensure runtime async HTTP client and asyncio test support are available
+        uv pip install aiohttp pytest pytest-asyncio pytest-cov
 
     - name: Create test environment file
       run: |
