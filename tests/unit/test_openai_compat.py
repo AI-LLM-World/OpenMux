@@ -5,6 +5,7 @@ import importlib
 
 def _make_fake_orchestrator(return_value: str = "fake response"):
     mod = types.ModuleType("openmux.core.orchestrator")
+    from typing import Optional
 
     class FakeOrchestrator:
         def __init__(self, *args, **kwargs):
@@ -24,6 +25,22 @@ def _make_fake_orchestrator(return_value: str = "fake response"):
             self._last["kwargs"] = kwargs
             return return_value
 
+    # Also supply a fake exceptions module so the mapper import works in tests
+    exc_mod = types.ModuleType("openmux.utils.exceptions")
+    class FakeAPIError(Exception):
+        def __init__(self, provider_name: str, status_code: Optional[int] = None, message: Optional[str] = None, response_text: Optional[str] = None):
+            self.status_code = status_code
+            super().__init__(message or "api error")
+
+    setattr(exc_mod, "APIError", FakeAPIError)
+    setattr(exc_mod, "ProviderUnavailableError", Exception)
+    setattr(exc_mod, "NoProvidersAvailableError", Exception)
+    setattr(exc_mod, "FailoverError", Exception)
+    setattr(exc_mod, "TimeoutError", Exception)
+    setattr(exc_mod, "ModelNotFoundError", Exception)
+    setattr(exc_mod, "ProviderError", Exception)
+    setattr(exc_mod, "ConfigurationError", Exception)
+
     # Attach to the fake module
     setattr(mod, "Orchestrator", FakeOrchestrator)
     # Minimal TaskType enum substitute
@@ -34,16 +51,17 @@ def _make_fake_orchestrator(return_value: str = "fake response"):
 
     setattr(tt_mod, "TaskType", TaskType)
 
-    return mod, tt_mod
+    return mod, tt_mod, exc_mod
 
 
 def test_chat_completion_create():
-    fake_orch_mod, fake_tt_mod = _make_fake_orchestrator("hello from fake orch")
+    fake_orch_mod, fake_tt_mod, fake_exc_mod = _make_fake_orchestrator("hello from fake orch")
 
     # Inject fake modules before importing the compatibility shim so its
     # lazy imports pick up the fakes.
     sys.modules["openmux.core.orchestrator"] = fake_orch_mod
     sys.modules["openmux.classifier.task_types"] = fake_tt_mod
+    sys.modules["openmux.utils.exceptions"] = fake_exc_mod
 
     try:
         import importlib
@@ -65,9 +83,10 @@ def test_chat_completion_create():
 
 def test_embeddings_create_parses_vector():
     # Make orchestrator return a JSON array string
-    fake_orch_mod, fake_tt_mod = _make_fake_orchestrator("[0.1, 0.2, 0.3]")
+    fake_orch_mod, fake_tt_mod, fake_exc_mod = _make_fake_orchestrator("[0.1, 0.2, 0.3]")
     sys.modules["openmux.core.orchestrator"] = fake_orch_mod
     sys.modules["openmux.classifier.task_types"] = fake_tt_mod
+    sys.modules["openmux.utils.exceptions"] = fake_exc_mod
 
     try:
         import importlib
@@ -89,9 +108,10 @@ def test_embeddings_create_parses_vector():
 
 def test_chat_create_stream_and_async():
     # orchestrator to return a simple string
-    fake_orch_mod, fake_tt_mod = _make_fake_orchestrator("streamable response")
+    fake_orch_mod, fake_tt_mod, fake_exc_mod = _make_fake_orchestrator("streamable response")
     sys.modules["openmux.core.orchestrator"] = fake_orch_mod
     sys.modules["openmux.classifier.task_types"] = fake_tt_mod
+    sys.modules["openmux.utils.exceptions"] = fake_exc_mod
 
     try:
         import importlib, asyncio

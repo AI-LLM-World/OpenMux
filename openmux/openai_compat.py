@@ -98,7 +98,13 @@ class ChatCompletion:
 
         # Orchestrator.process is synchronous (it runs the async internals),
         # so this shim remains synchronous like the OpenAI client.
-        result_text = orch.process(prompt_text, task_type=TaskType.CHAT, **orch_kwargs)
+        try:
+            result_text = orch.process(prompt_text, task_type=TaskType.CHAT, **orch_kwargs)
+        except Exception as e:
+            # Map internal exceptions to OpenAI-like errors
+            from .openai_errors import map_openmux_exception
+
+            raise map_openmux_exception(e)
 
         # If streaming requested, return a simple synchronous generator that
         # yields a minimal stream-compatible sequence. Providers may offer
@@ -171,7 +177,12 @@ class ChatCompletion:
         if max_tokens is not None:
             orch_kwargs["max_tokens"] = max_tokens
 
-        result_text = await orch._process_async(prompt_text, task_type=TaskType.CHAT, **orch_kwargs)
+        try:
+            result_text = await orch._process_async(prompt_text, task_type=TaskType.CHAT, **orch_kwargs)
+        except Exception as e:
+            from .openai_errors import map_openmux_exception
+
+            raise map_openmux_exception(e)
 
         if stream:
             async def _agen():
