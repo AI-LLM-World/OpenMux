@@ -22,7 +22,8 @@ class OllamaProvider(BaseProvider):
     def __init__(
         self,
         base_url: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        auto_select: bool = False,
     ):
         """Initialize Ollama provider.
         
@@ -36,6 +37,9 @@ class OllamaProvider(BaseProvider):
         self.model = model or os.getenv("OLLAMA_MODEL", "llama2")
         self._session: Optional[aiohttp.ClientSession] = None
         self._available: Optional[bool] = None
+        # Automatic model selection (opt-in). Can be enabled via env OLLAMA_AUTO_SELECT=true
+        env_auto = os.getenv("OLLAMA_AUTO_SELECT", "false").lower() in ("1", "true", "yes")
+        self.auto_select = auto_select or env_auto
     
     def is_available(self) -> bool:
         """Check if Ollama is available.
@@ -171,8 +175,21 @@ class OllamaProvider(BaseProvider):
 
         # Build request
         url = f"{self.base_url}/api/generate"
+        # Determine model (kwargs override). If auto_select enabled, attempt to pick a locally installed model.
+        model_to_use = kwargs.get("model", None)
+        if model_to_use is None:
+            # may call list_models(); keep it opt-in with self.auto_select
+            if self.auto_select:
+                try:
+                    model_to_use = await self._select_model(task_type, kwargs)
+                except Exception:
+                    # if discovery fails, fall back to configured default
+                    model_to_use = self.model
+            else:
+                model_to_use = self.model
+
         payload = {
-            "model": kwargs.get("model", self.model),
+            "model": model_to_use,
             "prompt": query,
             "stream": False,
             "options": {
@@ -218,6 +235,62 @@ class OllamaProvider(BaseProvider):
         except Exception as e:
             logger.error(f"Error generating with Ollama: {e}")
             raise
+
+    async def _select_model(self, task_type: Optional[TaskType], kwargs: Dict[str, Any]) -> str:
+        """Select a model to use, preferring locally installed models when available.
+
+        Returns a model id or name string. This method is best-effort and will
+        fall back to self.model if no suitable model is discovered.
+        """
+        # Respect explicit model in kwargs
+        if "model" in kwargs and kwargs["model"]:
+            return kwargs["model"]
+
+        # Try to discover models from the Ollama server
+        try:
+            models = await self.list_models()
+        except Exception:
+            return self.model
+
+        # If models is a dict-like response, normalize
+        try:
+            if isinstance(models, dict):
+                # wrap dict into list for uniform handling
+                models = [models]
+
+            if isinstance(models, list) and len(models) > 0:
+                # 1) prefer explicit configured model if present in discovered models
+                for m in models:
+                    if isinstance(m, dict) and (m.get("id") == self.model or m.get("name") == self.model):
+                        return m.get("id") or m.get("name")
+
+                # 2) if task_type provided, prefer a model that declares support
+                if task_type is not None:
+                    for m in models:
+                        if isinstance(m, dict) and "task_types" in m:
+                            if task_type.name.lower() in [t.lower() for t in m["task_types"]]:
+                                return m.get("id") or m.get("name")
+
+                # 3) heuristics: choose a model name that contains 'llama' for chat, 'code' or 'codellama' for code
+                if task_type == TaskType.CHAT:
+                    for m in models:
+                        s = (m.get("id") if isinstance(m, dict) else str(m)).lower()
+                        if "llama" in s or "chat" in s:
+                            return m.get("id") if isinstance(m, dict) else m
+                if task_type == TaskType.CODE:
+                    for m in models:
+                        s = (m.get("id") if isinstance(m, dict) else str(m)).lower()
+                        if "code" in s or "codellama" in s:
+                            return m.get("id") if isinstance(m, dict) else m
+
+                # 4) fallback: return the first discovered model id/name
+                first = models[0]
+                return first.get("id") if isinstance(first, dict) and "id" in first else first
+
+        except Exception:
+            return self.model
+
+        return self.model
 
     async def generate_stream(
         self,
