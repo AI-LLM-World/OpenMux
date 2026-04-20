@@ -75,6 +75,17 @@ jobs:
           echo "Skipping live tests - no API key provided"
         fi
 
+    - name: Run Ollama live integration tests (gated)
+      if: secrets.OLLAMA_E2E_SECRET != '' && secrets.OLLAMA_URL != ''
+      env:
+        OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
+        OLLAMA_E2E: 'true'
+        OLLAMA_AUTO_SELECT: 'true'
+      run: |
+        source .venv/bin/activate
+        echo "Running gated Ollama live integration tests..."
+        pytest tests/integration/test_ollama_live.py tests/integration/test_ollama_auto_select_live.py -v --tb=short || true
+
     - name: Run tests with coverage
       env:
         OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
