@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.3] - 2026-04-20
+
+### ✨ Added
+- **Cache subsystem**: Added BaseCache, DiskCache, and RedisCache implementations and refactored ResponseCache to use the pluggable backends. This enables configurable response caching (memory/disk/redis) and improves testability.
+
+### 🔧 Fixed
+- Adjustments to Ollama provider availability checks and test harness compatibility.
+
+---
+
 ## [0.2.2] - 2025-01-11
 
 ### ✨ Added

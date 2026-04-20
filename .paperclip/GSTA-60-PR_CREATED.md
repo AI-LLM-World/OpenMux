@@ -1,5 +1,7 @@
 PR: feat/gsta-60-provider-registry
-Status: pushed to origin and PR draft needs creation (no GITHUB_TOKEN in environment to call API)
+Status: pushed to origin. PR draft needs creation (no GITHUB_TOKEN in environment to call API).
+Next: create draft PR at https://github.com/AI-LLM-World/OpenMux/pull/new/feat/gsta-60-provider-registry and assign Staff Engineer for review and QA Engineer for acceptance testing.
+Issue State: in_review (move on PR creation)
 Suggested PR URL (create via GitHub UI): https://github.com/AI-LLM-World/OpenMux/pull/new/feat/gsta-60-provider-registry
 
 Assign:

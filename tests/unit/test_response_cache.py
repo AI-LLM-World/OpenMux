@@ -3,7 +3,7 @@ import tempfile
 from openmux.utils.response_cache import ResponseCache
 
 
-def test_memory_cache_basic(loop:=None):
+def test_memory_cache_basic(loop=None):
     # Create cache
     c = ResponseCache(ttl=1, backend="memory")
 
@@ -16,7 +16,7 @@ def test_memory_cache_basic(loop:=None):
         await asyncio.sleep(1.1)
         assert await c.get(key) is None
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
 
 
 def test_disk_cache_basic():
@@ -31,4 +31,4 @@ def test_disk_cache_basic():
         await asyncio.sleep(1.1)
         assert await c.get(key) is None
 
-    asyncio.get_event_loop().run_until_complete(_run())
+    asyncio.run(_run())
