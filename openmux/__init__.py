@@ -28,7 +28,7 @@ except ImportError:
     # dotenv not installed, skip
     pass
 
-__version__ = "0.1.0"
+__version__ = "0.2.3"
 __author__ = "OpenMux Contributors"
 __all__ = ["Orchestrator", "TaskType", "get_version"]
 
