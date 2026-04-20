@@ -9,6 +9,7 @@ import aiohttp
 
 from openmux.providers.together import TogetherProvider
 from openmux.classifier.task_types import TaskType
+from openmux.utils.exceptions import APIError
 
 
 @pytest.fixture
@@ -71,3 +72,41 @@ async def test_close_context_manager():
             session = await provider._get_session()
             assert isinstance(session, aiohttp.ClientSession)
         assert session.closed
+
+
+@pytest.mark.asyncio
+async def test_generate_with_http_error(together_provider):
+    mock_response = MagicMock()
+    mock_response.status = 401
+    mock_response.text = AsyncMock(return_value="Invalid API key")
+
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.post = MagicMock(return_value=mock_cm)
+
+    with patch.object(together_provider, '_get_session', return_value=mock_session):
+        with pytest.raises(APIError) as excinfo:
+            await together_provider.generate("test query", TaskType.CHAT)
+
+        assert excinfo.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_generate_with_malformed_response(together_provider):
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"ok": False})
+
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.post = MagicMock(return_value=mock_cm)
+
+    with patch.object(together_provider, '_get_session', return_value=mock_session):
+        response = await together_provider.generate("Test", task_type=TaskType.CHAT)
+        assert isinstance(response, str)

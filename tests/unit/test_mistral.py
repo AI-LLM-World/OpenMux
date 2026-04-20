@@ -9,6 +9,7 @@ import aiohttp
 
 from openmux.providers.mistral import MistralProvider
 from openmux.classifier.task_types import TaskType
+from openmux.utils.exceptions import APIError
 
 
 @pytest.fixture
@@ -71,3 +72,43 @@ async def test_close_context_manager():
             session = await provider._get_session()
             assert isinstance(session, aiohttp.ClientSession)
         assert session.closed
+
+
+@pytest.mark.asyncio
+async def test_generate_with_http_error(mistral_provider):
+    """Test that non-200 responses raise APIError and status_code is propagated."""
+    mock_response = MagicMock()
+    mock_response.status = 429
+    mock_response.text = AsyncMock(return_value="Rate limit exceeded")
+
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.post = MagicMock(return_value=mock_cm)
+
+    with patch.object(mistral_provider, '_get_session', return_value=mock_session):
+        with pytest.raises(APIError) as excinfo:
+            await mistral_provider.generate("test query", TaskType.CHAT)
+
+        assert excinfo.value.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_generate_with_malformed_response(mistral_provider):
+    """Test handling of malformed API response (return string)."""
+    mock_response = AsyncMock()
+    mock_response.status = 200
+    mock_response.json = AsyncMock(return_value={"unexpected": "format"})
+
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_session = AsyncMock()
+    mock_session.post = MagicMock(return_value=mock_cm)
+
+    with patch.object(mistral_provider, '_get_session', return_value=mock_session):
+        response = await mistral_provider.generate("Test", task_type=TaskType.CHAT)
+        assert isinstance(response, str)
