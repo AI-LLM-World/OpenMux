@@ -20,6 +20,8 @@ except ImportError:
 
 from ..core.orchestrator import Orchestrator
 from ..classifier.task_types import TaskType
+import json
+import datetime
 
 
 if RICH_AVAILABLE:
@@ -51,6 +53,7 @@ if RICH_AVAILABLE:
         query: Optional[str] = typer.Argument(None, help="Query to process"),
         task_type: Optional[str] = typer.Option(None, "--task", "-t", help="Task type (chat, code, embeddings)"),
         interactive: bool = typer.Option(False, "--interactive", "-i", help="Start interactive chat mode"),
+        stream: bool = typer.Option(False, "--stream", "-s", help="Stream output as it arrives"),
     ):
         """Chat with AI models using OpenMux."""
         try:
@@ -83,14 +86,42 @@ if RICH_AVAILABLE:
                             
                             # Process query
                             console.print("[dim]Processing...[/dim]")
-                            response = orchestrator.process(query=user_input, task_type=task)
-                            
-                            # Display response
-                            console.print(Panel(
-                                response,
-                                title="[bold blue]AI Response[/bold blue]",
-                                style="blue"
-                            ))
+                            # Support streaming if provider/Orchestrator supports it
+                            if stream:
+                                # orchestrator.process_stream returns an async iterator
+                                import asyncio
+
+                                async def _stream_and_print():
+                                    try:
+                                        full = []
+                                        async for chunk in orchestrator.process_stream(user_input, task_type=task):
+                                            console.print(chunk)
+                                            full.append(chunk)
+                                        # Save assembled response to history. If the
+                                        # orchestrator recorded the streaming provider
+                                        # use it for attribution.
+                                        provider_name = getattr(orchestrator, "_last_stream_provider", "")
+                                        try:
+                                            _append_history_entry(user_input, "\n".join(full), provider=provider_name)
+                                        except Exception:
+                                            pass
+                                    except Exception as e:
+                                        console.print(f"[red]Stream error: {e}[/red]")
+
+                                asyncio.run(_stream_and_print())
+                            else:
+                                response = orchestrator.process(query=user_input, task_type=task)
+                                # Display response
+                                console.print(Panel(
+                                    response,
+                                    title="[bold blue]AI Response[/bold blue]",
+                                    style="blue"
+                                ))
+                                # Append to history
+                                try:
+                                    _append_history_entry(user_input, response)
+                                except Exception:
+                                    pass
                             
                         except KeyboardInterrupt:
                             console.print("\n[yellow]Goodbye![/yellow]")
@@ -104,13 +135,33 @@ if RICH_AVAILABLE:
                         task = TaskType.from_string(task_type)
                     
                     console.print("[dim]Processing...[/dim]")
-                    response = orchestrator.process(query=query, task_type=task)
-                    
-                    console.print(Panel(
-                        response,
-                        title="[bold blue]Response[/bold blue]",
-                        style="blue"
-                    ))
+                    if stream:
+                        import asyncio
+
+                        async def _stream_and_print():
+                            full = []
+                            async for chunk in orchestrator.process_stream(query, task_type=task):
+                                console.print(chunk)
+                                full.append(chunk)
+
+                            provider_name = getattr(orchestrator, "_last_stream_provider", "")
+                            try:
+                                _append_history_entry(query, "\n".join(full), provider=provider_name)
+                            except Exception:
+                                pass
+
+                        asyncio.run(_stream_and_print())
+                    else:
+                        response = orchestrator.process(query=query, task_type=task)
+                        console.print(Panel(
+                            response,
+                            title="[bold blue]Response[/bold blue]",
+                            style="blue"
+                        ))
+                        try:
+                            _append_history_entry(query, response)
+                        except Exception:
+                            pass
                 
         except Exception as e:
             console.print(Panel(f"[bold red]Error:[/bold red] {str(e)}", style="red"))
