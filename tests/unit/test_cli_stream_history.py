@@ -3,6 +3,7 @@ from typer.testing import CliRunner
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
+from openmux.cli import main as cli_main
 from openmux.cli.main import app
 
 
@@ -13,6 +14,10 @@ def test_cli_stream_history_tmp(tmp_path, monkeypatch):
     # On Windows Path.home() reads USERPROFILE; set both for portability
     monkeypatch.setenv('HOME', str(tmp_path))
     monkeypatch.setenv('USERPROFILE', str(tmp_path))
+
+    # Ensure CLI writes history under the temp HOME we're setting
+    cli_main._HISTORY_DIR = Path(tmp_path) / ".openmux"
+    cli_main._HISTORY_FILE = cli_main._HISTORY_DIR / "history.jsonl"
 
     # Create a mock orchestrator with process_stream yielding chunks
     mock_orch = MagicMock()
