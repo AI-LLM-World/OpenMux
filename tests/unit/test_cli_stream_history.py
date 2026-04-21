@@ -10,7 +10,9 @@ def test_cli_stream_history_tmp(tmp_path, monkeypatch):
     runner = CliRunner()
 
     # Monkeypatch home dir so history goes to tmp_path/.openmux
+    # On Windows Path.home() reads USERPROFILE; set both for portability
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))
 
     # Create a mock orchestrator with process_stream yielding chunks
     mock_orch = MagicMock()
