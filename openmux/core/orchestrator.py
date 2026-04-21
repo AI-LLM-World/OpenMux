@@ -51,7 +51,10 @@ class Orchestrator:
         # Initialize components
         self.registry = ProviderRegistry()
         self.selector: Optional[ModelSelector] = None
-        self.router = Router()
+        # Configure router with performance tuning from config
+        perf_cfg = self.config.get_performance_config()
+        max_concurrency = perf_cfg.get("max_concurrent")
+        self.router = Router(max_concurrency=max_concurrency)
         self.combiner = Combiner()
         self.fallback: Optional[FallbackHandler] = None
         # Allow injecting a custom classifier for testing or customization.
@@ -366,7 +369,10 @@ class Orchestrator:
         # Select a larger candidate pool: request up to num_models * 2 providers
         # so we have alternatives if some fail quickly. This keeps the call
         # site simple while letting the router return the first N successes.
-        candidate_count = max(num_models * 2, num_models)
+        # Candidate multiplier from config (default 2)
+        perf_cfg = self.config.get_performance_config()
+        multiplier = int(perf_cfg.get("candidate_multiplier", 2))
+        candidate_count = max(num_models * multiplier, num_models)
         providers = self.selector.select_multiple(task_type, candidate_count)
         
         if not providers:

@@ -77,3 +77,12 @@ class Config:
         """Get model registry configuration."""
         config = self.load()
         return config.get("model_registry", {})
+
+    def get_performance_config(self) -> Dict[str, Any]:
+        """Get performance-related configuration.
+
+        Returns a dict with keys like 'candidate_multiplier', 'max_concurrent',
+        and 'timeout' used by the orchestrator and router tuning.
+        """
+        config = self.load()
+        return config.get("performance", {})
