@@ -3,7 +3,8 @@ from typer.testing import CliRunner
 from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
-from openmux.cli import main as cli_main
+import importlib
+cli_main = importlib.import_module('openmux.cli.main')
 from openmux.cli.main import app
 
 
