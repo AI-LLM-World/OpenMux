@@ -1,6 +1,6 @@
 """Unit tests for CLI streaming history attribution."""
 from typer.testing import CliRunner
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
 
 from openmux.cli.main import app
@@ -13,7 +13,7 @@ def test_cli_stream_history_tmp(tmp_path, monkeypatch):
     monkeypatch.setenv('HOME', str(tmp_path))
 
     # Create a mock orchestrator with process_stream yielding chunks
-    mock_orch = Mock()
+    mock_orch = MagicMock()
 
     async def _gen():
         yield "a"
