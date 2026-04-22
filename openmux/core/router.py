@@ -6,6 +6,7 @@ from typing import List, Optional, Tuple
 
 from ..providers.base import BaseProvider
 from ..utils.exceptions import ProviderError, FailoverError, TimeoutError as OpenMuxTimeoutError, APIError
+from ..utils.metrics import metrics
 
 
 logger = logging.getLogger(__name__)
@@ -197,9 +198,19 @@ class Router:
                     # Successful response
                     success_responses.append(result)
 
+            # Record metrics: how many successful responses we are returning
+            try:
+                metrics.incr(f"multi.responses.returned", len(success_responses))
+            except Exception:
+                pass
+
             # Cancel any remaining tasks since we have enough responses (or ran out)
             for t in pending:
                 t.cancel()
+                try:
+                    metrics.incr("multi.tasks.cancelled")
+                except Exception:
+                    pass
 
             # Ensure cancellations are awaited to suppress warnings
             if pending:
