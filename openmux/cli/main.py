@@ -307,6 +307,43 @@ if RICH_AVAILABLE:
             raise typer.Exit(code=1)
 
 
+def _history_path() -> Path:
+    """Return the path to the CLI history file (JSONL).
+
+    Uses OPENMUX_HISTORY_PATH env var if set, otherwise defaults to
+    ~/.openmux/history.jsonl
+    """
+    env_path = os.getenv("OPENMUX_HISTORY_PATH")
+    if env_path:
+        return Path(env_path)
+    return Path(Path.home()) / ".openmux" / "history.jsonl"
+
+
+def _append_history_entry(query: str, response: str, provider: Optional[str] = None) -> None:
+    """Append a history entry to the user's history file in JSON lines format.
+
+    This is a best-effort helper used by the CLI; failures are intentionally
+    swallowed by callers to avoid breaking the user experience.
+    """
+    try:
+        path = _history_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        entry = {
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "query": query,
+            "response": response,
+        }
+        if provider:
+            entry["provider"] = provider
+
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        # Best-effort only; don't raise
+        return
+
+
 def main():
     """Main CLI entry point."""
     if not RICH_AVAILABLE:

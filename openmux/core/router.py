@@ -2,10 +2,12 @@
 
 import asyncio
 import logging
+import time
 from typing import List, Optional, Tuple
 
 from ..providers.base import BaseProvider
 from ..utils.exceptions import ProviderError, FailoverError, TimeoutError as OpenMuxTimeoutError, APIError
+from ..utils.metrics import metrics
 
 
 logger = logging.getLogger(__name__)
@@ -188,6 +190,10 @@ class Router:
         success_responses: List[str] = []
         pending = set(tasks)
 
+        # Track start time so we can record the latency of the Nth-fastest
+        # successful response. This is used by unit tests and metrics.
+        start_time = time.perf_counter()
+
         try:
             while pending and len(success_responses) < return_first_n:
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -212,6 +218,19 @@ class Router:
 
                     # Successful response
                     success_responses.append(result)
+
+                    # If we've reached the requested Nth response, record the
+                    # latency (ms) and increment a counter so downstream metrics
+                    # can compute averages if desired.
+                    try:
+                        if len(success_responses) == return_first_n:
+                            elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+                            # Cumulative sum of latencies (ms)
+                            metrics.incr("multi.nth_fastest_latency_ms", elapsed_ms)
+                            # Count of nth_fastest observations
+                            metrics.incr("multi.nth_fastest_count")
+                    except Exception:
+                        pass
 
             # Cancel any remaining tasks since we have enough responses (or ran out)
             for t in pending:

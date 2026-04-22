@@ -134,13 +134,21 @@ class Orchestrator:
         import asyncio as _asyncio
 
         async def _gen():
-            # Initialize selector/fallback like normal
-            await self._process_async("", None)  # ensure selector/fallback inited
-            # For streaming we delegate to the first selected provider's
-            # generate_stream implementation. Keep behavior simple: pick the
-            # single best provider via selector.select_single
+            # Initialize selector/fallback without performing a full processing
+            # run. Calling _process_async here is heavyweight and may trigger
+            # provider calls; instead initialize the selector and fallback
+            # structures which are sufficient for selecting a streaming provider.
+            self._initialize_selector()
+            self._initialize_fallback()
+
+            # Determine task type, lazily initializing the classifier if needed.
             if task_type is None:
                 try:
+                    if self.classifier is None:
+                        from ..classifier.classifier import TaskClassifier
+
+                        self.classifier = TaskClassifier()
+
                     inferred_type, _ = self.classifier.classify(query)
                     _task_type = inferred_type
                 except Exception:
@@ -148,14 +156,26 @@ class Orchestrator:
             else:
                 _task_type = task_type
 
-            self._initialize_selector()
             provider = self.selector.select_single(_task_type)
             if provider is None:
                 raise NoProvidersAvailableError(task_type=str(_task_type), available_providers=[p.name for p in self.registry.get_all_available()])
 
-            # Stream from provider
-            async for chunk in provider.generate_stream(query, task_type=_task_type, **kwargs):
-                yield chunk
+            # Record the provider used for streaming so callers (e.g. CLI) can
+            # attribute history entries. Ensure we clear the attribute after
+            # streaming completes or errors to avoid stale state.
+            self._last_stream_provider = provider.name
+            try:
+                if not hasattr(provider, "generate_stream"):
+                    raise Exception(f"Provider {provider.name} does not support streaming")
+
+                async for chunk in provider.generate_stream(query, task_type=_task_type, **kwargs):
+                    yield chunk
+            finally:
+                try:
+                    # Clear attribution; don't raise if attribute missing
+                    delattr(self, "_last_stream_provider")
+                except Exception:
+                    pass
 
         # Return an async iterator to the caller (they can run it in their loop)
         return _gen()
