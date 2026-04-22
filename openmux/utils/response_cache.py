@@ -10,6 +10,9 @@ from ..cache.base import MemoryCache, make_key
 from ..cache.disk import DiskCache
 from ..cache.redis import RedisCache
 from ..utils.metrics import metrics
+from ..utils.logging import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class ResponseCache:
@@ -31,11 +34,23 @@ class ResponseCache:
             elif self.backend_name == "disk":
                 self._impl = DiskCache(path)
             elif self.backend_name == "redis":
+                # For redis we prefer to surface errors to the caller so the
+                # orchestrator can choose to disable caching rather than
+                # silently falling back. RedisCache will raise if redis.asyncio
+                # is not available.
                 self._impl = RedisCache(path or "redis://localhost:6379")
             else:
+                logger.warning(f"Unknown cache backend '{self.backend_name}', falling back to memory")
                 self._impl = MemoryCache()
-        except Exception:
-            # Fall back to memory on any backend initialization error
+        except Exception as e:
+            # If the user explicitly requested redis and initialization
+            # failed, surface the error so higher layers can react (and log).
+            if self.backend_name == "redis":
+                logger.error(f"Failed to initialize redis cache backend: {e}")
+                raise
+
+            # For other backends, log and fall back to memory
+            logger.warning(f"Cache backend '{self.backend_name}' init failed, falling back to memory: {e}")
             self._impl = MemoryCache()
             self.backend_name = "memory"
 

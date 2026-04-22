@@ -71,7 +71,8 @@ class Orchestrator:
                 try:
                     self.response_cache = ResponseCache(ttl=ttl, backend=backend, path=path)
                 except Exception as e:
-                    # Log and fall back to disabled cache. Keep orchestrator usable.
+                    # If redis backend was requested and initialization raised,
+                    # surface the error so operators see the misconfiguration.
                     logger.warning(f"Cache initialization failed; disabling cache: {e}")
                     self.response_cache = None
             else:
