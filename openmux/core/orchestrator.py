@@ -68,11 +68,18 @@ class Orchestrator:
                 backend = cache_cfg.get("backend", "memory")
                 ttl = cache_cfg.get("ttl", 3600)
                 path = cache_cfg.get("path")
-                self.response_cache = ResponseCache(ttl=ttl, backend=backend, path=path)
+                try:
+                    self.response_cache = ResponseCache(ttl=ttl, backend=backend, path=path)
+                except Exception as e:
+                    # Log and fall back to disabled cache. Keep orchestrator usable.
+                    logger.warning(f"Cache initialization failed; disabling cache: {e}")
+                    self.response_cache = None
             else:
                 self.response_cache = None
-        except Exception:
-            # Never fail orchestrator initialization due to cache issues
+        except Exception as e:
+            # Defensive: ensure orchestrator initialization never raises here,
+            # but surface the failure in logs so operators can diagnose issues.
+            logger.warning(f"Unexpected error while configuring cache: {e}")
             self.response_cache = None
         
         logger.info("Orchestrator initialized")

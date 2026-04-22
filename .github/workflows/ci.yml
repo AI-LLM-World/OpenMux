@@ -12,11 +12,22 @@ on:
     branches:
       - main
       - develop
+  workflow_dispatch:
 
 jobs:
   test:
     name: Test on Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 2s
+          --health-retries 3
     strategy:
       fail-fast: false
       matrix:
@@ -41,6 +52,8 @@ jobs:
         uv venv
         source .venv/bin/activate
         uv pip install -e ".[dev]"
+        # Ensure optional runtime redis client is available for RedisCache tests
+        uv pip install redis>=4.6.0
         # Ensure runtime async HTTP client and asyncio test support are available
         uv pip install aiohttp pytest pytest-asyncio pytest-cov
 
@@ -203,4 +216,50 @@ jobs:
       with:
         name: dist-python-${{ github.sha }}
         path: dist/
+        retention-days: 7
+
+  benchmarks:
+    name: Benchmarks (manual)
+    runs-on: ubuntu-latest
+    # Only run benchmarks when workflow is manually dispatched
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 2s
+          --health-retries 3
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install uv and deps
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        uv venv
+        source .venv/bin/activate
+        uv pip install -e ".[dev]"
+        uv pip install redis>=4.6.0
+
+    - name: Run cache benchmarks
+      run: |
+        source .venv/bin/activate
+        pytest tests/benchmarks/test_cache_backends.py -q --benchmark-only --benchmark-autosave
+
+    - name: Upload benchmark artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchmarks-${{ github.sha }}
+        path: .benchmarks/
         retention-days: 7
