@@ -1,10 +1,10 @@
-++
 import json
 import pytest
 
 from pathlib import Path
 
-from openmux.cli import main as cli_main
+import importlib
+cli_main = importlib.import_module("openmux.cli.main")
 
 
 pytestmark = pytest.mark.skipif(
