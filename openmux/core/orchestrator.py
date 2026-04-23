@@ -171,15 +171,65 @@ class Orchestrator:
                 raise NoProvidersAvailableError(task_type=str(_task_type), available_providers=[p.name for p in self.registry.get_all_available()])
 
             # Record which provider will be used for this stream so callers
-            # (e.g., CLI) can attribute responses in history.
+            # (e.g., CLI) can attribute responses in history. We'll clear this
+            # attribute in the finally block below.
             try:
                 self._last_stream_provider = provider.name
             except Exception:
                 self._last_stream_provider = ""
 
-            # Stream from provider
-            async for chunk in provider.generate_stream(query, task_type=_task_type, **kwargs):
-                yield chunk
+            try:
+                # First, try streaming if the provider supports it.
+                if hasattr(provider, "generate_stream"):
+                    try:
+                        async for chunk in provider.generate_stream(query, task_type=_task_type, **kwargs):
+                            yield chunk
+                        return
+                    except Exception as stream_err:
+                        logger.warning(f"Stream failed for {provider.name}: {stream_err}; attempting non-stream fallback")
+
+                # Next, try a non-streaming generate() on the same provider.
+                try:
+                    result = await provider.generate(query, task_type=_task_type, **kwargs)
+                    # Yield the full response as a single chunk
+                    yield result
+                    return
+                except Exception as gen_err:
+                    logger.warning(f"Non-stream generate failed for {provider.name}: {gen_err}")
+
+                # Try other providers as fallbacks. Prefer streaming-capable
+                # providers first, then non-streaming ones.
+                candidates = self.selector.select_multiple(_task_type, count=len(self.selector.providers))
+                for cand in candidates:
+                    if cand.name == provider.name:
+                        continue
+
+                    if hasattr(cand, "generate_stream"):
+                        try:
+                            self._last_stream_provider = cand.name
+                            async for chunk in cand.generate_stream(query, task_type=_task_type, **kwargs):
+                                yield chunk
+                            return
+                        except Exception:
+                            logger.debug(f"Streaming candidate {cand.name} failed; trying next")
+                            continue
+
+                    try:
+                        self._last_stream_provider = cand.name
+                        res = await cand.generate(query, task_type=_task_type, **kwargs)
+                        yield res
+                        return
+                    except Exception:
+                        logger.debug(f"Non-streaming candidate {cand.name} failed; trying next")
+                        continue
+
+                # If we reach here, everything failed
+                raise Exception("All providers failed to stream or generate a response")
+            finally:
+                try:
+                    delattr(self, "_last_stream_provider")
+                except Exception:
+                    pass
 
         # Return an async iterator to the caller (they can run it in their loop)
         return _gen()
