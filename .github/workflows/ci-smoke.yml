@@ -1,0 +1,38 @@
+name: Release Smoke Tests
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Smoke check (import)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run smoke import
+        run: |
+          python - <<'PY'
+          # Minimal smoke test: ensure package imports and version is retrievable.
+          import sys
+          # Repo root should be on sys.path by default in CI; ensure it's available.
+          print('sys.path[0]=', sys.path[0])
+          import openmux
+          v = openmux.get_version()
+          print('openmux version:', v)
+          assert isinstance(v, str) and v
+          print('SMOKE_OK')
+          PY
