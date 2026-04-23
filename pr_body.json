@@ -1,0 +1,7 @@
+﻿{
+  "title": "feat(gsta-59): parallel multi-model orchestration, concurrency cap, and nth-fastest metrics",
+  "head": "feat/gsta-59-parallel-orchestration",
+  "base": "main",
+  "body": "Summary:\n- Add Router(max_concurrency) to limit concurrent provider calls via an asyncio.Semaphore.\n- Record nth-fastest latency metrics when returning the first N responses: `multi.nth_fastest_latency_ms` and `multi.nth_fastest_count`.\n- Keep existing metrics: `multi.responses.returned`, `multi.tasks.cancelled`.\n- Add unit test for nth-fastest metrics (tests/unit/test_router_metrics.py).\n\nWhy:\nEnables true parallel multi-model orchestration with a tunable global concurrency cap and basic observability to measure how quickly the router returns the Nth successful response.\n\nTesting:\n- Added unit test to validate nth-fastest metrics.\n- Performed local verification with small scripts (tools/) since `pytest` isn't installed in the run environment.\n\nNext steps:\n- Run CI to validate the rest of the suite.\n- Consider richer metrics (histogram, per-provider tags) and a test helper to reset the metrics singleton between tests.",
+  "maintainer_can_modify": true
+}
